@@ -1,0 +1,4 @@
+# python==2.7
+click==6.7
+MySQL-python==1.2.5
+SQLAlchemy==1.2.4
