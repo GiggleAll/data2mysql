@@ -4,6 +4,12 @@ import os
 import logging
 import codecs
 
+"""
+This module is used to format filename.
+and operation file content encoding.
+"""
+
+
 def quote_filename(filename):
     basename = os.path.basename(filename)
     dirname = os.path.dirname(filename)

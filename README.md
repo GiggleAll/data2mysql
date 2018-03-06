@@ -10,3 +10,9 @@ This script is designed to efficiently import data into MySQL.
 - The original data is GBK encoding, so pay attention to convert to UTF-8
 - Use the click package command line tool
 
+  ## how to use
+  1. open terminal
+  2. run "python <yourpath>/core.py --table=xxx --filename=xxx"
+  
+  (NOTE: more detail see core.py)
+
