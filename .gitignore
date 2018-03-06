@@ -2,5 +2,6 @@ env/*
 *.pyc
 test.py
 .idea
+.idea/*
 example_dirty_rows.csv
 tmp.py
