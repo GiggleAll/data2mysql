@@ -1,8 +1,8 @@
 from setuptools import setup
 
-PACKAGE = "email-push"
-NAME = "email-push"
-DESCRIPTION = "send email by calling sendcloud web api"
+PACKAGE = "data2mysql"
+NAME = "data2mysql"
+DESCRIPTION = "This script is designed to efficiently import data into MySQL."
 AUTHOR = "zhichaozhang3@gmail.com"
 VERSION = '0.1'
 
@@ -14,8 +14,9 @@ setup(
     license="MIT",
     packages=[PACKAGE],
     install_requires=[
-        'requests==2.18.4',
-        'voluptuous==0.11.1',
+        'click==6.7',
+        'MySQL-python==1.2.5',
+        'SQLAlchemy==1.2.4',
     ],
     zip_safe=False,
 )
