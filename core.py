@@ -1,9 +1,6 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
-import codecs
 import csv
 import logging
 import multiprocessing
@@ -14,12 +11,15 @@ import click
 import MySQLdb
 import sqlalchemy
 
+from operation_filename import conversion2csv, convert_file_to_utf8
+from operation_data import coversion2qq
+
 warnings.filterwarnings('ignore', category=MySQLdb.Warning)
 
-# 批量插入的记录数量
+# Batch insert record number.
 BATCH = 5000
 
-DB_URI = 'mysql://root@localhost:3306/example?charset=utf8'
+DB_URI = 'mysql://root:root@127.0.0.1:3306/email_data?charset=utf8'
 
 engine = sqlalchemy.create_engine(DB_URI)
 
@@ -32,16 +32,23 @@ def get_table_cols(table):
 
 def insert_many(table, cols, rows, cursor):
     sql = 'INSERT INTO `{table}` ({cols}) VALUES ({marks})'.format(
-            table=table,
-            cols=', '.join(cols),
-            marks=', '.join(['%s'] * len(cols)))
-    cursor.execute(sql, *rows)
+        table=table,
+        cols=', '.join(cols),
+        marks=', '.join(['%s'] * len(cols)))
+    try:
+        cursor.execute(sql, *rows)
+    # TODO improve this exception, to except specified error
+    # except Exception is not good.
+    # If you insert duplicate data, an error occurs(_mysql_exceptions.IntegrityError),
+    # but catching this error can not be caught, so using Exception will improve later
+    except Exception:
+        pass
     logging.info('process %s inserted %s rows into table %s', os.getpid(), len(rows), table)
 
 
 def insert_worker(table, cols, queue):
     rows = []
-    # 每个子进程创建自己的 engine 对象
+    # Each child process creates its own engine object
     cursor = sqlalchemy.create_engine(DB_URI)
     while True:
         row = queue.get()
@@ -50,6 +57,7 @@ def insert_worker(table, cols, queue):
                 insert_many(table, cols, rows, cursor)
             break
 
+        row = coversion2qq(row)
         rows.append(row)
         if len(rows) == BATCH:
             insert_many(table, cols, rows, cursor)
@@ -59,9 +67,9 @@ def insert_worker(table, cols, queue):
 def insert_parallel(table, reader, w=10):
     cols = get_table_cols(table)
 
-    # 数据队列，主进程读文件并往里写数据，worker 进程从队列读数据
-    # 注意一下控制队列的大小，避免消费太慢导致堆积太多数据，占用过多内存
-    queue = multiprocessing.Queue(maxsize=w*BATCH*2)
+    # Data queue, the main process of reading documents and write data inside, the worker process read data from the queue
+    # Note the size of the control queue to avoid spending too slow lead to accumulation of too much data, take up too much memory
+    queue = multiprocessing.Queue(maxsize=w * BATCH * 2)
     workers = []
     for i in range(w):
         p = multiprocessing.Process(target=insert_worker, args=(table, cols, queue))
@@ -74,56 +82,28 @@ def insert_parallel(table, reader, w=10):
     writer = csv.writer(xf, delimiter=reader.dialect.delimiter)
 
     for line in reader:
-        # 记录并跳过脏数据: 键值数量不一致
+        # Record and skip dirty data: The number of keys is not consistent
         if len(line) != len(cols):
             writer.writerow(line)
             continue
 
-        # 把 None 值替换为 'NULL'
+        # Replace None with 'NULL'
         clean_line = [None if x == 'NULL' else x for x in line]
 
-        # 往队列里写数据
+        # Write data to the queue
         queue.put(tuple(clean_line))
         if reader.line_num % 500000 == 0:
             logging.info('put %s tasks into queue.', reader.line_num)
 
     xf.close()
 
-    # 给每个 worker 发送任务结束的信号
+    # Send each worker a signal of the end of the task
     logging.info('send close signal to worker processes')
     for i in range(w):
         queue.put(None)
 
     for p in workers:
         p.join()
-
-
-def convert_file_to_utf8(f, rv_file=None):
-    if not rv_file:
-        name, ext = os.path.splitext(f)
-        if isinstance(name, unicode):
-            name = name.encode('utf8')
-        rv_file = '{}_utf8{}'.format(name, ext)
-    logging.info('start to process file %s', f)
-    with open(f) as infd:
-        with open(rv_file, 'w') as outfd:
-            lines = []
-            loop = 0
-            chunck = 200000
-            first_line = infd.readline().strip(codecs.BOM_UTF8).strip() + '\n'
-            lines.append(first_line)
-            for line in infd:
-                clean_line = line.decode('gb18030').encode('utf8')
-                clean_line = clean_line.rstrip() + '\n'
-                lines.append(clean_line)
-                if len(lines) == chunck:
-                    outfd.writelines(lines)
-                    lines = []
-                    loop += 1
-                    logging.info('processed %s lines.', loop * chunck)
-
-            outfd.writelines(lines)
-            logging.info('processed %s lines.', loop * chunck + len(lines))
 
 
 @click.group()
@@ -143,10 +123,20 @@ def convert_gbk_to_utf8(f):
 @click.option('-i', '--filename', required=True, help='输入文件')
 @click.option('-w', '--workers', default=10, help='worker 数量，默认 10')
 def load_fac_day_pro_nos_sal_table(table, filename, workers):
-    with open(filename) as fd:
-        fd.readline()   # skip header
+    def operation_fd(fd):
+        fd.readline()  # skip header
         reader = csv.reader(fd)
         insert_parallel(table, reader, w=workers)
+
+    if os.path.isfile(filename):
+        with open(conversion2csv(filename)) as fd:
+            operation_fd(fd)
+    elif os.path.isdir(filename):
+        for dirpath, dirnames, filenames in os.walk(filename):
+            if filenames:
+                for fn in filenames:
+                    with open(conversion2csv(os.path.join(dirpath, fn))) as fd:
+                        operation_fd(fd)
 
 
 if __name__ == '__main__':
